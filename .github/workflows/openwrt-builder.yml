@@ -27,7 +27,8 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo -E apt-get -y update
-          sudo -E apt-get -y install build-essential libncurses5-dev gawk git libssl-dev zlib1g-dev wget curl python3 python3-pip rsync unzip
+          # 补充底层依赖，防止 elfutils 等工具编译报错
+          sudo -E apt-get -y install build-essential libncurses5-dev gawk git libssl-dev zlib1g-dev libbz2-dev liblzma-dev libzstd-dev wget curl python3 python3-pip rsync unzip
 
       - name: Clone source code
         run: |
@@ -41,7 +42,6 @@ jobs:
           ./scripts/feeds install -a
           echo "[INFO] Feeds updated."
 
-      # 外科手术：拔除引起冲突的 weechat 插件，并拉取 mtd-rw 源码
       - name: Fix source dependencies
         run: |
           cd openwrt
@@ -59,7 +59,7 @@ jobs:
           cd openwrt
           cp -f ${GITHUB_WORKSPACE}/${CONFIG_FILE} .config
           
-          # 强行确保这两个包被选中 (移除了 mwan3，防止死循环)
+          # 强行确保这两个包被选中 (不包括 mwan3，防止死循环)
           echo "CONFIG_PACKAGE_luci-theme-argon=y" >> .config
           echo "CONFIG_PACKAGE_kmod-mtd-rw=y" >> .config
           
@@ -70,6 +70,7 @@ jobs:
           if grep -q "CONFIG_PACKAGE_luci-theme-argon=y" .config; then echo "[SUCCESS] Argon theme is included."; else echo "[ERROR] Argon theme was removed."; fi
           if grep -q "CONFIG_PACKAGE_kmod-mtd-rw=y" .config; then echo "[SUCCESS] mtd-rw is included."; else echo "[ERROR] mtd-rw was removed."; fi
           if grep -q "CONFIG_PACKAGE_kmod-mt_wifi=y" .config; then echo "[SUCCESS] MTK Wi-Fi driver is included."; else echo "[ERROR] MTK Wi-Fi driver is missing."; fi
+          if grep -q "CONFIG_PACKAGE_kmod-macvlan=y" .config; then echo "[SUCCESS] mwan3 base dependency is included."; else echo "[ERROR] mwan3 dependency is missing."; fi
 
       - name: Compile the OpenWrt
         id: compile
@@ -77,17 +78,19 @@ jobs:
           cd openwrt
           make download -j8
           echo "[INFO] Starting compilation with multi-threading..."
-          make -j$(($(nproc) + 1)) V=s || make -j1 V=s
+          # 降低并发到 -j4 防止内存溢出，如果极不稳定会退回 -j1
+          make -j4 V=s || make -j1 V=s
           echo "[INFO] Compilation finished."
 
       - name: Check firmware output
         run: |
           ls -lh openwrt/bin/targets/*/*/
-          if ! ls openwrt/bin/targets/*/*/*.itb openwrt/bin/targets/*/*/*.bin 2>/dev/null; then
+          # 使用 find 命令：只要有 .itb 或 .bin 任何一种格式存在，就算通过
+          if [ -z "$(find openwrt/bin/targets/ -name '*.itb' -o -name '*.bin')" ]; then
             echo "[ERROR] Build failed: No firmware file generated. Aborting upload."
             exit 1
           fi
-          echo "[INFO] Firmware files verified."
+          echo "[INFO] Firmware files verified successfully."
 
       - name: Upload firmware and packages
         uses: actions/upload-artifact@v4
