@@ -27,6 +27,7 @@ jobs:
         run: |
           sudo -E apt-get -y update
           sudo -E apt-get -y install build-essential libncurses5-dev gawk git libssl-dev zlib1g-dev wget curl python3 python3-pip rsync unzip
+          echo "[INFO] Build environment initialized."
 
       - name: Clone source code
         run: |
@@ -72,9 +73,9 @@ jobs:
           fi
           
           if grep -q "CONFIG_PACKAGE_kmod-macvlan=y" .config; then 
-            echo "[SUCCESS] macvlan dependency for mwan3 is included."
+            echo "[SUCCESS] mwan3 base dependency (macvlan) is included."
           else 
-            echo "[ERROR] macvlan dependency is missing. Aborting."
+            echo "[ERROR] mwan3 dependency is missing. Aborting."
             exit 1
           fi
           
