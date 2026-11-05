@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       source_branch:
-        description: '选择源码分支'
+        description: 'Select source branch'
         required: true
         default: 'chasey-25.12'
         type: choice
@@ -30,71 +30,77 @@ jobs:
 
       - name: Clone source code
         run: |
-          # 直接指向 chasey-dev 的 25.12 分支
           git clone -q --single-branch --depth=1 --branch=25.12 https://github.com/chasey-dev/immortalwrt-mt798x-rebase.git openwrt
-          echo "源码克隆完成"
+          echo "[INFO] Source code cloned successfully."
 
       - name: Load custom configuration
         run: |
-          # 确保路径与你仓库中的配置文件路径一致
           cp config/chasey-25.12/config openwrt/.config
+          echo "[INFO] Custom configuration loaded."
 
       - name: Update feeds
         run: |
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          echo "[INFO] Feeds updated and installed."
 
       - name: Download package
         run: |
           cd openwrt
           make defconfig
           make download -j8
+          echo "[INFO] Package download completed."
 
-      - name: Verify config (检查核心组件是否生效)
+      - name: Verify config
         run: |
           cd openwrt
-          echo "========== 检查最终生成的 .config =========="
+          echo "[INFO] Verifying target configuration..."
+          
           if grep -q "CONFIG_PACKAGE_luci-theme-argon=y" .config; then 
-            echo "✅ 成功：Argon 主题已包含！"
+            echo "[SUCCESS] Argon theme is included."
           else 
-            echo "❌ 失败：Argon 主题被系统剔除了！"
+            echo "[ERROR] Argon theme was removed by defconfig. Aborting."
             exit 1
           fi
+          
           if grep -q "CONFIG_PACKAGE_kmod-mt_wifi=y" .config; then 
-            echo "✅ 成功：MTK 闭源驱动已包含！"
+            echo "[SUCCESS] MTK closed-source Wi-Fi driver is included."
           else 
-            echo "❌ 失败：MTK 驱动缺失！"
+            echo "[ERROR] MTK Wi-Fi driver is missing. Aborting."
             exit 1
           fi
+          
           if grep -q "CONFIG_PACKAGE_kmod-macvlan=y" .config; then 
-            echo "✅ 成功：多拨底层依赖已包含！"
+            echo "[SUCCESS] macvlan dependency for mwan3 is included."
           else 
-            echo "❌ 失败：多拨依赖缺失！"
+            echo "[ERROR] macvlan dependency is missing. Aborting."
             exit 1
           fi
-          echo "=========================================="
+          
+          echo "[INFO] Configuration verification passed."
 
       - name: Compile the OpenWrt
         id: compile
         run: |
           cd openwrt
-          echo "开始编译，使用多线程..."
+          echo "[INFO] Starting compilation with multi-threading..."
           make -j$(($(nproc) + 1)) V=s || make -j1 V=s
-          echo "编译完成"
+          echo "[INFO] Compilation process finished."
 
-      - name: Check firmware
+      - name: Check firmware output
         run: |
           ls -lh openwrt/bin/targets/*/*/
           if ! ls openwrt/bin/targets/*/*/*.itb openwrt/bin/targets/*/*/*.bin 2>/dev/null; then
-            echo "🚨 编译失败：没有生成 .itb 或 .bin 固件文件！"
+            echo "[ERROR] Build failed: No firmware file (.itb or .bin) generated. Aborting upload."
             exit 1
           fi
+          echo "[INFO] Firmware files verified."
 
-      - name: Upload firmware and packages
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt_firmware_and_apk
+          name: OpenWrt_firmware_and_packages
           path: |
             openwrt/bin/targets/*/*/*.itb
             openwrt/bin/targets/*/*/*.bin
